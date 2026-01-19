@@ -1,0 +1,168 @@
+# Flux CD Installation Guide (GitOps with Gitea)
+
+## Overview
+
+This document describes how to install and bootstrap **Flux CD** using a **Gitea Git repository** with SSH authentication. Flux will continuously reconcile Kubernetes manifests stored in Git and apply them to the cluster using GitOps principles.
+
+---
+
+## Prerequisites
+
+Ensure the following are available before starting:
+
+* A running Kubernetes cluster (GKE / AKS / EKS / on-prem)
+* `kubectl` configured to access the cluster
+* `flux` CLI installed
+* A Gitea Git repository
+* SSH access to the Git repository
+* An SSH private key available locally
+
+---
+
+## Verify Flux CLI Installation
+
+```bash
+flux --version
+```
+
+If Flux is not installed, install it using:
+
+```bash
+curl -s https://fluxcd.io/install.sh | sudo bash
+```
+
+---
+
+## Git Repository Structure
+
+Flux will sync manifests from the following path in the Git repository:
+
+```
+Flux-cd/
+└── clusters/
+    └── dev/
+        └── azure-gke-cluster-01/
+```
+
+This path will contain all Kubernetes manifests, kustomizations, and Helm releases for this cluster.
+
+---
+
+## SSH Authentication Setup
+
+Ensure your SSH key exists:
+
+```bash
+ls /home/nawaz/.ssh/id_ed25519
+```
+
+Add the **public key** (`id_ed25519.pub`) to your Gitea repository or user SSH keys.
+
+---
+
+## Flux Bootstrap Command
+
+Run the following command to install and bootstrap Flux:
+
+```bash
+flux bootstrap git \
+  --url=ssh://git@gitea.com/NNO/Flux-cd.git \
+  --path=clusters/dev/azure-gke-cluster-01 \
+  --components-extra=image-reflector-controller,image-automation-controller \
+  --private-key-file=/home/nawaz/.ssh/id_ed25519 \
+  --branch=main
+```
+
+---
+
+## What This Command Does
+
+* Installs Flux controllers into the `flux-system` namespace
+* Connects Flux to the Gitea repository using SSH
+* Syncs Kubernetes manifests from:
+
+  ```
+  clusters/dev/azure-gke-cluster-01
+  ```
+* Enables additional components:
+
+  * **image-reflector-controller**
+    Scans container registries for new image tags
+  * **image-automation-controller**
+    Automatically updates image tags in Git
+* Commits Flux manifests to the `main` branch
+
+---
+
+## Installed Flux Components
+
+The following controllers will be installed:
+
+* source-controller
+* kustomize-controller
+* helm-controller
+* notification-controller
+* image-reflector-controller
+* image-automation-controller
+
+All components run in the `flux-system` namespace.
+
+---
+
+## Verify Installation
+
+Check Flux pods:
+
+```bash
+kubectl get pods -n flux-system
+```
+
+Check Flux status:
+
+```bash
+flux check
+```
+
+Check Git sources:
+
+```bash
+flux get sources git -A
+```
+
+---
+
+## Next Steps
+
+* Add application manifests under
+  `clusters/dev/azure-gke-cluster-01`
+* Create `Kustomization` or `HelmRelease` resources
+* Configure image automation for CI/CD
+* Set up alerts using Flux notifications
+
+---
+
+## Notes
+
+* Any change pushed to Git will be automatically applied to the cluster
+* Manual `kubectl apply` is discouraged after bootstrap
+* Secrets should be managed using Kubernetes secrets, SOPS, or external secret managers
+
+---
+
+## Troubleshooting
+
+Check Flux logs:
+
+```bash
+kubectl logs -n flux-system deploy/source-controller
+```
+
+Force reconciliation:
+
+```bash
+flux reconcile kustomization flux-system
+```
+
+---
+
+**Flux CD is now successfully installed and managing your cluster using GitOps 🚀**
