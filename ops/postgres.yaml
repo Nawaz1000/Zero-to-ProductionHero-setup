@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: postgresql
+type: Opaque
+data:
+  password: q3NPCTwu5sMhwnq5jaqz
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    wave.pusher.com/update-on-config-change: "true"
+  name: postgres
+  namespace: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  serviceName: ts-postgres-service   # required for StatefulSet
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16 
+        ports:
+        - containerPort: 5432
+          name: psql
+          protocol: TCP
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-storage
+          subPath: postgres  
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 30Gi
+      storageClassName: premium-rwo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ts-postgres-service
+  namespace: postgresql
+spec:
+  type: NodePort
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432

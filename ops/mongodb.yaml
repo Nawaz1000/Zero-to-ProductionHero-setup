@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mongodb
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: OCIRepository
+metadata:
+  name: bitnami-oci-mongodb
+  namespace: flux-system
+spec:
+  interval: 5m0s
+  url: oci://registry-1.docker.io/bitnamicharts/mongodb
+  ref:
+    semver: "18.1.17"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mongo-release
+  namespace: mongodb
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: bitnami-oci-mongodb
+    namespace: flux-system
+  interval: 10m
+  values:
+    global:
+      security:
+    # @param global.security.allowInsecureImages Allows skipping image verification
+        allowInsecureImages: true
+    image: 
+      repository: bitnamilegacy/mongodb
+    persistence:
+      size: 80Gi    
+    auth:
+      enabled: true
+      rootPassword: ""
+    architecture: replicaset
+    useStatefulSet: true
+
+
+
+
+    ############HEADLESS_SERVICE_CONFIGURATION############
+    # apiVersion: v1
+# kind: Service
+# metadata:
+#   annotations:
+#     meta.helm.sh/release-name: mongo-rs
+#     meta.helm.sh/release-namespace: mongodb
+#   name: mongodb-release-headless
+#   namespace: mongodb
+# spec:
+#   clusterIP: None
+#   clusterIPs:
+#   - None
+#   internalTrafficPolicy: Cluster
+#   ipFamilies:
+#   - IPv4
+#   ipFamilyPolicy: SingleStack
+#   ports:
+#   - name: mongodb
+#     port: 27017
+#     protocol: TCP
+#     targetPort: mongodb
+#   selector:
+#     app.kubernetes.io/component: mongodb
+#     app.kubernetes.io/instance: mongo-rs
+#     app.kubernetes.io/name: mongodb
+#   sessionAffinity: None
+#   type: ClusterIP

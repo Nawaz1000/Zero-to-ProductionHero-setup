@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    wave.pusher.com/update-on-config-change: "true"
+  name: pgbouncer
+  namespace: postgresql
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+    spec:
+      containers:
+      - name: pgbouncer
+        image: ghcr.io/icoretech/pgbouncer-docker:1.24.0
+        ports:
+        - containerPort: 6432
+          name: psql
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /etc/pgbouncer/
+          name: config
+        - mountPath: /etc/userlist/
+          name: userlist
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: pgbouncer-config
+        name: config
+      - name: userlist
+        configMap:
+          defaultMode: 420
+          name: pgbouncer-userlist
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    netbird.io/expose: "true"
+    netbird.io/policy: default
+    netbird.io/resource-name: ts-postgres
+    netbird.io/groups: ts-k8s-gke
+  name: ts-pgbouncer-service
+  namespace: postgresql
+spec:
+  type: LoadBalancer   
+  selector:
+    app: pgbouncer
+  ports:
+    - protocol: TCP
+      port: 6432
+      targetPort: 6432
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+  namespace: postgresql
+data:
+  pgbouncer.ini: |
+    [databases]
+    * = host=ts-postgres-service.postgresql.svc.cluster.local port=5432
+
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    # auth_type = md5
+    auth_file = /etc/userlist/userlist.txt
+
+    admin_users = postgres           
+    stats_users = postgres
+
+    pool_mode = session
+    max_client_conn = 1000
+    default_pool_size = 200
+    ignore_startup_parameters = extra_float_digits
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-userlist
+  namespace: postgresql
+data:
+  userlist.txt: |
+    "postgres" "password@123"

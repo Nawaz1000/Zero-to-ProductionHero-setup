@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+---
+kind: Secret
+apiVersion: v1
+metadata:
+  name: infisical-secrets
+  namespace: external-secrets
+data:
+  AUTH_SECRET: ##ADD_YOUR_AUTH_SECRET_HERE##
+  ENCRYPTION_KEY: ##ADD_YOUR_ENCRYPTION_KEY_HERE##
+  SITE_URL: ##ADD_YOUR_SITE_URL_HERE##
+type: Opaque
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: external-secrets
+  namespace: external-secrets
+spec:
+  interval: 5m0s
+  url: https://charts.external-secrets.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: external-secrets
+  namespace: external-secrets
+spec:
+  chart:
+    spec:
+      chart: external-secrets
+      version: '0.10.4'
+      sourceRef:
+        kind: HelmRepository
+        name: external-secrets
+  interval: 2m0s
+  releaseName: external-secrets
+  timeout: 600s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    meta.helm.sh/release-name: infisical-release
+    meta.helm.sh/release-namespace: external-secrets
+  labels:
+    app: infisical-standalone
+    app.kubernetes.io/managed-by: Helm
+    chart: infisical-standalone-1.0.8
+    component: infisical
+    helm.toolkit.fluxcd.io/name: infisical
+    helm.toolkit.fluxcd.io/namespace: external-secrets
+    heritage: Helm
+    release: infisical-release
+  name: infisical-infisical-standalone-infisical-np
+  namespace: external-secrets
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: infisical-standalone
+    component: infisical
+    release: infisical
+  sessionAffinity: None
+  type: NodePort
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: infisical
+  namespace: external-secrets
+spec:
+  interval: 5m0s
+  url: https://dl.cloudsmith.io/public/infisical/helm-charts/helm/charts/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: infisical
+  namespace: external-secrets
+spec:
+  chart:
+    spec:
+      chart: infisical-standalone
+      version: '1.0.8'
+      sourceRef:
+        kind: HelmRepository
+        name: infisical
+  interval: 2m0s
+  releaseName: infisical
+  timeout: 600s
+  values:
+    infisical:
+      image:
+          tag: "v0.115.0-postgres"
+    postgresql:
+      image:
+        registry: mirror.gcr.io
+        repository: bitnamilegacy/postgresql
+    redis:
+      image:
+        registry: mirror.gcr.io
+        repository: bitnamilegacy/redis    
+---
+apiVersion: v1
+data:
+  clientId: ##ADD_YOUR_CLIENT_ID_HERE##
+  clientSecret: ##ADD_YOUR_CLIENT_SECRET_HERE##
+kind: Secret
+metadata:
+  name: universal-auth-credentials
+  namespace: external-secrets
+type: Opaque 
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+ name: infisical-dev-secretstore
+ namespace: dev
+spec:
+ provider:
+   infisical:
+     auth:
+       universalAuthCredentials:
+         clientId:
+           key: clientId
+           namespace: external-secrets
+           name: universal-auth-credentials
+         clientSecret:
+           key: clientSecret
+           namespace: external-secrets
+           name: universal-auth-credentials
+     hostAPI: http://infisical-infisical-standalone-infisical.external-secrets.svc.cluster.local:8080
+     secretsScope:
+       projectSlug:    #### Copy from Project Slug
+       environmentSlug: #### copy from Environment Slug
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+ name: infisical-dev-managed-secrets
+ namespace: dev
+spec:
+ refreshInterval: 1m
+ secretStoreRef:
+   kind: ClusterSecretStore
+   name: infisical-dev-secretstore
+ target:
+   name: infisical-auth-api #volume name to be used in deployment 
+   template:
+     metadata:
+       annotations:
+         wave.pusher.com/update-on-config-change: "true"
+ dataFrom:
+ - find:
+     name:
+       regexp: ".*"
+   rewrite:
+   - regexp:
+       source: "/(.*)"
+       target: "$1"

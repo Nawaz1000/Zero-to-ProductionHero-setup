@@ -1,0 +1,56 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: kube-prometheus-stack
+  namespace: ops
+spec:
+  interval: 5m0s
+  url: https://prometheus-community.github.io/helm-charts
+
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: ops
+spec:
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 80.6.0
+      sourceRef:
+        kind: HelmRepository
+        name: kube-prometheus-stack
+  interval: 2m0s
+  releaseName: kube-prometheus-stack
+  timeout: 600s
+  values:
+    grafana:
+      additionalDataSources:
+        - name: Loki
+          type: loki
+          orgId: 1
+          url: http://loki-stack.ops.svc.cluster.local:3100
+          basicAuth: false
+          isDefault: false
+          editable: true
+      persistence:
+        enabled: true
+        type: pvc
+        existingClaim: grafana-pvc
+        accessModes:
+          - ReadWriteOnce
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: ops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+  storageClassName: standard

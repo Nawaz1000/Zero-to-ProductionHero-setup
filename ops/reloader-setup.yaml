@@ -1,0 +1,32 @@
+#helm repo add wave-k8s https://wave-k8s.github.io/wave/
+#helm install wave wave-k8s/wave
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wave
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: wave
+  namespace: wave
+spec:
+  interval: 5m0s
+  url: https://wave-k8s.github.io/wave/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: wave-release
+  namespace: wave
+spec:
+  chart:
+    spec:
+      chart: wave
+      sourceRef:
+        kind: HelmRepository
+        name: wave
+  interval: 2m0s
+  releaseName: wave
+  timeout: 600s

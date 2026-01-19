@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: headlamp
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  interval: 1m0s
+  url: https://kubernetes-sigs.github.io/headlamp/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  interval: 1m0s
+  chart:
+    spec:
+      chart: headlamp
+      sourceRef:
+        kind: HelmRepository
+        name: headlamp
+        namespace: headlamp
+      version: "0.39.0"
+  values:
+    config:
+      pluginsDir: /build/plugins
+    initContainers:
+      - name: headlamp-flux-plugin
+        image: ghcr.io/headlamp-k8s/headlamp-plugin-flux:latest
+        imagePullPolicy: Always
+        command:
+          - /bin/sh
+          - -c
+          - |
+            mkdir -p /build/plugins && \
+            cp -r /plugins/* /build/plugins/
+        volumeMounts:
+          - name: headlamp-plugins
+            mountPath: /build/plugins
+    volumeMounts:
+      - name: headlamp-plugins
+        mountPath: /build/plugins
+    volumes:
+      - name: headlamp-plugins
+        emptyDir: {}
+    persistentVolumeClaim:
+      enabled: true
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headlamp-lb
+  namespace: headlamp
+  labels:
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/name: headlamp
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/name: headlamp
+---
+# ###### TOKEN ROTATOR ####
+# ---
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: token-rotator
+#   namespace: headlamp
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: token-rotator-role
+#   namespace: headlamp
+# rules:
+# - apiGroups: [""]
+#   resources: ["serviceaccounts/token"]
+#   verbs: ["create"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: token-rotator-binding
+#   namespace: headlamp
+# subjects:
+# - kind: ServiceAccount
+#   name: token-rotator
+# roleRef:
+#   kind: Role
+#   name: token-rotator-role
+#   apiGroup: rbac.authorization.k8s.io
+# ---
+# apiVersion: v1
+# data:
+#   clientId: 
+#   clientSecret: 
+# metadata:
+#   name: universal-auth-credentials
+#   namespace: headlamp
+# type: Opaque
+# ---
+# apiVersion: batch/v1
+# kind: CronJob
+# metadata:
+#   name: headlamp-sa-token-to-infisical
+#   namespace: headlamp
+# spec:
+#   schedule: "0 */6 * * *"
+#   concurrencyPolicy: Forbid
+#   successfulJobsHistoryLimit: 2
+#   failedJobsHistoryLimit: 2
+#   jobTemplate:
+#     spec:
+#       template:
+#         spec:
+#           serviceAccountName: token-rotator
+#           restartPolicy: OnFailure
+#           containers:
+#           - name: rotator
+#             image: gcr.io/cloud-builders/kubectl
+#             command: ["/bin/sh", "-c"]
+#             args:
+#               - |
+#                 set -eu
+                
+#                 echo "Installing Infisical CLI..."
+#                 curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash
+#                 apt-get update && apt-get install -y infisical
+                
+#                 echo "Logging into Infisical using Universal Auth..."
+#                 export INFISICAL_API_URL="$INFISICAL_DOMAIN"
+
+#                 export INFISICAL_TOKEN=$(infisical login --method=universal-auth --client-id="$INFISICAL_CLIENT_ID" \
+#                 --client-secret="$INFISICAL_CLIENT_SECRET" --silent --plain)
+
+#                 echo "Generating Headlamp ServiceAccount token..."
+#                 TOKEN=$(kubectl create token headlamp -n headlamp  --duration=48h)
+
+#                 echo "Pushing token to Infisical..."
+
+#                 infisical secrets set HEADLAMP_K8S_SA_TOKEN="$TOKEN" \
+#                   --projectId="$INFISICAL_PROJECT_ID" \
+#                   --env=dev \
+#                   --silent
+#                 echo "Token rotation completed successfully."
+
+#             env:
+#             - name: INFISICAL_PROJECT_ID
+#               value: 4ab9d5c2-cd7e-4abd-9a6b-ddc0510ed4af
+#             - name: INFISICAL_DOMAIN
+#               value: ""
+#             - name: INFISICAL_CLIENT_ID
+#               valueFrom:
+#                 secretKeyRef:
+#                   name: universal-auth-credentials
+#                   key: clientId
+#             - name: INFISICAL_CLIENT_SECRET
+#               valueFrom:
+#                 secretKeyRef:
+#                   name: universal-auth-credentials
+#                   key: clientSecret
